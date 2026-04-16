@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LTSpice Low Pass Filter Viewer</title>
+    <!-- Use Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <!-- Plotly.js for interactive rendering -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --panel-bg: rgba(30, 41, 59, 0.7);
+            --accent-color: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.5);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(15, 23, 42, 1) 0, transparent 50%), 
+                radial-gradient(at 50% 0%, rgba(59, 130, 246, 0.15) 0, transparent 50%), 
+                radial-gradient(at 100% 0%, rgba(15, 23, 42, 1) 0, transparent 50%);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        header {
+            width: 100%;
+            padding: 2rem 0;
+            text-align: center;
+        }
+
+        h1 {
+            font-weight: 700;
+            margin: 0;
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 30px var(--accent-glow);
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 1400px;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        /* Glassmorphism Panels */
+        .panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .upload-zone {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed var(--accent-color);
+            background: rgba(59, 130, 246, 0.05);
+            cursor: pointer;
+            padding: 3rem;
+            text-align: center;
+        }
+
+        .upload-zone:hover {
+            background: rgba(59, 130, 246, 0.1);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 40px var(--accent-glow);
+        }
+
+        .upload-zone input {
+            display: none;
+        }
+
+        .upload-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        /* Dashboard layout */
+        .dashboard {
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 2rem;
+            display: none; /* hidden until file loaded */
+        }
+
+        .plot-container {
+            width: 100%;
+            height: 600px;
+        }
+
+        .stats {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .stat-box {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-box::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 4px; height: 100%;
+            background: var(--accent-color);
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .controls {
+            margin-bottom: 1rem;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        select {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            background: #1e293b;
+            color: white;
+            border: 1px solid var(--border-color);
+            font-family: inherit;
+            outline: none;
+            cursor: pointer;
+        }
+
+        select:focus {
+            border-color: var(--accent-color);
+        }
+
+        #plot {
+            width: 100%;
+            height: 100%;
+        }
+
+        input[type="number"], input[type="text"] {
+            padding: 0.5rem;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            color: white;
+            border: 1px solid var(--border-color);
+            font-family: inherit;
+            outline: none;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        input[type="number"]:focus, input[type="text"]:focus {
+            border-color: var(--accent-color);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Filter Analytics</h1>
+        <p class="subtitle">Interactive LTSpice .raw AC Analysis Viewer</p>
+    </header>
+
+    <div class="container">
+        <!-- Upload Section -->
+        <label class="panel upload-zone" id="upload-zone">
+            <div class="upload-icon">📁</div>
+            <h2 style="margin-top: 0;">Drop your .raw file here</h2>
+            <p class="subtitle">or click to browse a LTSpice RAW file</p>
+            <input type="file" id="file-input" accept=".raw">
+        </label>
+
+        <!-- Dashboard Section -->
+        <div class="dashboard" id="dashboard">
+            <div class="panel">
+                <div class="controls">
+                    <span style="color: var(--text-muted)">Variable:</span>
+                    <select id="variable-selector"></select>
+                </div>
+                <div class="plot-container">
+                    <div id="plot"></div>
+                </div>
+            </div>
+
+            <div class="stats">
+                <div class="panel stat-box">
+                    <span class="stat-label">Cutoff Freq(s)</span>
+                    <span class="stat-value" id="stat-fc">...</span>
+                </div>
+                <div class="panel stat-box">
+                    <span class="stat-label">Stopband Slope(s)</span>
+                    <span class="stat-value" id="stat-slope">...</span>
+                </div>
+                <div class="panel stat-box" style="margin-top: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <span class="stat-label" style="margin: 0;">Interactive Tool</span>
+                        <select id="tool-selector" style="padding: 0.2rem 0.5rem; font-size: 0.8rem; width: 130px;">
+                            <option value="cursors">Dual Cursors</option>
+                            <option value="finder">Freq/Gain Finder</option>
+                        </select>
+                    </div>
+                    
+                    <div id="tool-cursors-pane">
+                        <div style="display: flex; gap: 1rem; margin-top: 0.5rem; justify-content: space-between;">
+                            <!-- Cursor 1 -->
+                            <div style="flex: 1;">
+                                <div style="font-size: 0.85rem; font-weight: 700; color: #f43f5e; margin-bottom: 0.25rem;">Cursor 1</div>
+                                <input type="text" id="c1-freq" placeholder="Freq (e.g. 1k)" style="margin-bottom: 0.25rem; font-size: 0.8rem; padding: 0.3rem;">
+                                <input type="number" id="c1-gain" placeholder="Gain (dB)" style="font-size: 0.8rem; padding: 0.3rem;">
+                            </div>
+                            
+                            <!-- Cursor 2 -->
+                            <div style="flex: 1;">
+                                <div style="font-size: 0.85rem; font-weight: 700; color: #10b981; margin-bottom: 0.25rem;">Cursor 2</div>
+                                <input type="text" id="c2-freq" placeholder="Freq (e.g. 1k)" style="margin-bottom: 0.25rem; font-size: 0.8rem; padding: 0.3rem;">
+                                <input type="number" id="c2-gain" placeholder="Gain (dB)" style="font-size: 0.8rem; padding: 0.3rem;">
+                            </div>
+                        </div>
+                        
+                        <!-- Deltas -->
+                        <div style="margin-top: 1rem; padding-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">Differences (&Delta;)</div>
+                            <div style="display: flex; justify-content: space-between; font-size: 1rem;">
+                                <span>&Delta;f: <span id="delta-f" style="color: #fff; font-weight: 600;">---</span></span>
+                                <span>&Delta;dB: <span id="delta-gain" style="color: #fff; font-weight: 600;">---</span></span>
+                            </div>
+                            <div style="margin-top: 0.25rem; font-size: 0.95rem;">
+                                Slope: <span id="delta-slope" style="color: #fff; font-weight: 600;">---</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="tool-finder-pane" style="display: none; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
+                        <label style="font-size: 0.85rem; color: var(--text-muted)">Input Freq (Hz):</label>
+                        <input type="text" id="calc-freq" placeholder="e.g. 1k, 2.5M">
+                        <div id="calc-gain-out" style="font-size: 1.1rem; font-weight: 600; color: #60a5fa; margin-bottom: 0.5rem;">---</div>
+                        
+                        <label style="font-size: 0.85rem; color: var(--text-muted)">Input Gain (dB):</label>
+                        <input type="number" id="calc-gain" placeholder="e.g. -3">
+                        <div id="calc-freq-out" style="font-size: 1.1rem; font-weight: 600; color: #60a5fa;">---</div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let parsedData = null;
+
+        // Setup File Input Handlers
+        const fileInput = document.getElementById('file-input');
+        const uploadZone = document.getElementById('upload-zone');
+        const dashboard = document.getElementById('dashboard');
+        const variableSelector = document.getElementById('variable-selector');
+
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.style.borderColor = '#60a5fa';
+            uploadZone.style.background = 'rgba(59, 130, 246, 0.15)';
+        });
+        
+        uploadZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            uploadZone.style.borderColor = '';
+            uploadZone.style.background = '';
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.style.borderColor = '';
+            uploadZone.style.background = '';
+            if (e.dataTransfer.files.length) {
+                processFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) {
+                processFile(e.target.files[0]);
+            }
+        });
+
+        variableSelector.addEventListener('change', () => {
+            if (parsedData) {
+                plotData(parseInt(variableSelector.value));
+            }
+        });
+
+        async function processFile(file) {
+            try {
+                const buffer = await file.arrayBuffer();
+                parseLTSpiceRaw(buffer);
+                uploadZone.style.display = 'none';
+                dashboard.style.display = 'grid';
+            } catch (err) {
+                alert("Error reading file: " + err.message);
+                console.error(err);
+            }
+        }
+
+        function parseLTSpiceRaw(buffer) {
+            // Read as string first to find header
+            const u16 = new Uint16Array(buffer);
+            let headerText = '';
+            let binaryOffset = -1;
+            
+            // Search for "Binary:\n"
+            for (let i = 0; i < u16.length; i++) {
+                let char = String.fromCharCode(u16[i]);
+                if (char !== '\0') {
+                    headerText += char;
+                }
+                if (headerText.endsWith('Binary:\n') || headerText.endsWith('Binary:\r\n')) {
+                    binaryOffset = (i + 1) * 2;
+                    break;
+                }
+            }
+
+            if (binaryOffset === -1) {
+                throw new Error("Could not find binary data start. Is this an LTSpice RAW file?");
+            }
+
+            // Parse header variables
+            const varsMatch = headerText.match(/No\. Variables:\s*(\d+)/);
+            const pointsMatch = headerText.match(/No\. Points:\s*(\d+)/);
+            const flagsMatch = headerText.match(/Flags:\s*(.+)/);
+            
+            if (!varsMatch || !pointsMatch) throw new Error("Missing variable/points count in header.");
+
+            const numVars = parseInt(varsMatch[1]);
+            const numPoints = parseInt(pointsMatch[1]);
+            const isComplex = flagsMatch && flagsMatch[1].includes('complex');
+
+            const variablesSectionMatch = headerText.match(/Variables:[\r\n]+([\s\S]*?)Binary:/);
+            if (!variablesSectionMatch) throw new Error("Could not parse Variables block.");
+            const variablesSection = variablesSectionMatch[1];
+            
+            const varLines = variablesSection.trim().split('\n');
+            const variables = [];
+            
+            varLines.forEach(line => {
+                const parts = line.trim().split(/\s+/);
+                if (parts.length >= 3) {
+                    variables.push({ index: parseInt(parts[0]), name: parts[1], type: parts[2] });
+                }
+            });
+
+            // Populate selector
+            variableSelector.innerHTML = '';
+            variables.forEach((v, i) => {
+                if (i === 0) return; // Skip frequency
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.textContent = `${v.name} (${v.type})`;
+                variableSelector.appendChild(opt);
+            });
+
+            // Read Binary Data
+            const dv = new DataView(buffer);
+            let offset = binaryOffset;
+            
+            // For AC analysis (complex), frequency is surprisingly stored as 8-byte real, 8-byte imag (which is 0)
+            // Wait, actually testing showed 16 bytes per point for frequency too!
+            // We'll read each variable as 16 bytes (2 x Float64).
+            
+            const bytesPerPoint = numVars * 16;
+            const freqs = new Float64Array(numPoints);
+            const varData = [];
+            for (let i = 0; i < numVars; i++) {
+                varData.push(new Float64Array(numPoints));
+            }
+
+            for (let p = 0; p < numPoints; p++) {
+                // Verify we don't go out of bounds
+                if (offset + bytesPerPoint > buffer.byteLength) break;
+                
+                for (let v = 0; v < numVars; v++) {
+                    const real = dv.getFloat64(offset, true); // Little endian
+                    const imag = dv.getFloat64(offset + 8, true);
+                    offset += 16;
+                    
+                    if (v === 0) {
+                        freqs[p] = real;
+                    } else {
+                        // Calculate magnitude in dB
+                        const mag = Math.sqrt(real*real + imag*imag);
+                        // Prevent log of 0
+                        const db = mag > 0 ? 20 * Math.log10(mag) : -400;
+                        varData[v][p] = db;
+                    }
+                }
+            }
+
+            parsedData = { freqs, varData, variables };
+            
+            // Try to select V(out) or V(n002)
+            let targetIdx = 1;
+            let outVar = variables.find(v => v.name.toLowerCase().includes('out'));
+            if (!outVar) outVar = variables.find(v => v.name.includes('(n002)'));
+            if (!outVar) outVar = variables.find(v => v.name.toLowerCase().match(/v\([^)]+\)/));
+            if (outVar) {
+                targetIdx = outVar.index;
+                variableSelector.value = targetIdx;
+            }
+
+            plotData(targetIdx);
+        }
+
+        function plotData(varIndex) {
+            const freqs = parsedData.freqs;
+            const dbData = parsedData.varData[varIndex];
+            const varName = parsedData.variables[varIndex].name;
+
+            // Compute -3dB point(s)
+            let maxDb = -Infinity;
+            for(let i=0; i<dbData.length; i++) {
+                if (dbData[i] > maxDb) maxDb = dbData[i];
+            }
+
+            const targetDb = maxDb - 3.0;
+            const cutoffs = []; // { freq, type: 'falling' | 'rising', index }
+
+            // Find all crossings of targetDb
+            for(let i=0; i<dbData.length - 1; i++) {
+                if (dbData[i] >= targetDb && dbData[i+1] < targetDb) {
+                    // crossing down (falling edge)
+                    const p = (targetDb - dbData[i]) / (dbData[i+1] - dbData[i]);
+                    const f = freqs[i] + p * (freqs[i+1] - freqs[i]);
+                    cutoffs.push({ freq: f, type: 'falling', index: i });
+                } else if (dbData[i] < targetDb && dbData[i+1] >= targetDb) {
+                    // crossing up (rising edge)
+                    const p = (targetDb - dbData[i]) / (dbData[i+1] - dbData[i]);
+                    const f = freqs[i] + p * (freqs[i+1] - freqs[i]);
+                    cutoffs.push({ freq: f, type: 'rising', index: i });
+                }
+            }
+
+            // Determine Slopes & update stats
+            let fcText = "";
+            let slopeText = "";
+
+            if (cutoffs.length === 0) {
+                fcText = "Not found";
+                slopeText = "N/A";
+            } else {
+                fcText = cutoffs.map(c => formatFreq(c.freq)).join(' , ');
+                
+                // Calculate slopes for each cutoff
+                const slopes = [];
+                for (let c of cutoffs) {
+                    if (c.type === 'falling') {
+                        // LP slope (measure from 1 decade higher to end)
+                        const decadeFreq = c.freq * 10;
+                        let dIdx = -1;
+                        for(let i=c.index; i<freqs.length; i++) {
+                            if (freqs[i] >= decadeFreq) { dIdx = i; break; }
+                        }
+                        if (dIdx !== -1) {
+                            const endFreq = freqs[freqs.length - 1];
+                            const endDb = dbData[freqs.length - 1];
+                            if (endFreq > decadeFreq) {
+                                const slope = (endDb - dbData[dIdx]) / Math.log10(endFreq / decadeFreq);
+                                slopes.push(slope.toFixed(1) + " dB/dec");
+                            } else {
+                                slopes.push("N/A");
+                            }
+                        }
+                    } else if (c.type === 'rising') {
+                        // HP slope (measure from start to 1 decade lower)
+                        const decadeFreq = c.freq / 10;
+                        let dIdx = -1;
+                        for(let i=c.index; i>=0; i--) {
+                            if (freqs[i] <= decadeFreq) { dIdx = i; break; }
+                        }
+                        if (dIdx !== -1 && dIdx > 0) {
+                            const startFreq = freqs[0];
+                            const startDb = dbData[0];
+                            if (startFreq < decadeFreq) {
+                                const slope = (dbData[dIdx] - startDb) / Math.log10(decadeFreq / startFreq);
+                                slopes.push("+" + slope.toFixed(1) + " dB/dec");
+                            } else {
+                                slopes.push("N/A");
+                            }
+                        } else {
+                            slopes.push("N/A");
+                        }
+                    }
+                }
+                slopeText = slopes.length ? slopes.join(' , ') : "N/A";
+            }
+
+            document.getElementById('stat-fc').textContent = fcText;
+            document.getElementById('stat-slope').textContent = slopeText;
+
+            // Draw Plotly Graph
+            const trace1 = {
+                x: Array.from(freqs),
+                y: Array.from(dbData),
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Magnitude (dB)',
+                line: { color: '#3b82f6', width: 2 }
+            };
+
+            const shapes = [];
+            const annotations = [];
+
+            for (let i = 0; i < cutoffs.length; i++) {
+                const c = cutoffs[i];
+                shapes.push({
+                    type: 'line', x0: c.freq, x1: c.freq, y0: 0, y1: 1, yref: 'paper',
+                    line: { color: '#ef4444', width: 2, dash: 'dot' }
+                });
+                
+                annotations.push({
+                    x: Math.log10(c.freq),
+                    y: targetDb,
+                    xref: 'x', yref: 'y',
+                    text: `Fc = ${formatFreq(c.freq)}`,
+                    showarrow: true, arrowhead: 2,
+                    ax: (c.type === 'falling') ? 50 : -50,
+                    ay: -30 - (i % 2) * 20, // stagger vertically if needed
+                    font: { color: 'white' }
+                });
+            }
+
+            // Draw target db line across
+            if (cutoffs.length > 0) {
+                 shapes.push({
+                    type: 'line',
+                    x0: freqs[0], x1: freqs[freqs.length-1],
+                    y0: targetDb, y1: targetDb,
+                    line: { color: '#10b981', width: 1, dash: 'dot' }
+                });
+            }
+
+            const layout = {
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                font: { color: '#94a3b8' },
+                title: { text: `Frequency Response: ${varName}` },
+                xaxis: { 
+                    type: 'log', 
+                    title: 'Frequency (Hz)',
+                    gridcolor: 'rgba(255,255,255,0.1)',
+                    zerolinecolor: 'rgba(255,255,255,0.2)'
+                },
+                yaxis: { 
+                    title: 'Magnitude (dB)',
+                    gridcolor: 'rgba(255,255,255,0.1)',
+                    zerolinecolor: 'rgba(255,255,255,0.2)'
+                },
+                shapes: shapes,
+                annotations: annotations,
+                margin: { t: 50, r: 20, l: 60, b: 50 },
+            };
+
+            window.baseShapes = shapes.slice();
+            window.baseAnnotations = annotations.slice();
+            Plotly.newPlot('plot', [trace1], layout, {responsive: true});
+            updateCursors(); // draw any active cursors immediately
+        }
+
+        function formatFreq(f) {
+            if (f >= 1e9) return (f/1e9).toFixed(2) + " GHz";
+            if (f >= 1e6) return (f/1e6).toFixed(2) + " MHz";
+            if (f >= 1e3) return (f/1e3).toFixed(2) + " kHz";
+            return f.toFixed(1) + " Hz";
+        }
+        function parseEng(str) {
+            const s = str.trim();
+            const match = s.match(/^([\d.]+)([kMGuµmnp]*)$/i);
+            if (!match) return parseFloat(s);
+            let val = parseFloat(match[1]);
+            const p = match[2];
+            if (p === 'k' || p === 'K') val *= 1e3;
+            else if (p === 'M' || p === 'Meg' || p === 'meg') val *= 1e6;
+            else if (p === 'G' || p === 'g') val *= 1e9;
+            else if (p === 'm') val *= 1e-3;
+            else if (p === 'u' || p === 'µ') val *= 1e-6;
+            else if (p === 'n') val *= 1e-9;
+            else if (p === 'p') val *= 1e-12;
+            return val;
+        }
+
+        // Cursor Logic
+        function interpFreqToGain(freq) {
+            if (!parsedData) return null;
+            const varIndex = parseInt(variableSelector.value);
+            const freqs = parsedData.freqs;
+            const dbData = parsedData.varData[varIndex];
+            
+            if (freq <= freqs[0]) return dbData[0];
+            if (freq >= freqs[freqs.length-1]) return dbData[freqs.length-1];
+            
+            for(let i=0; i<freqs.length - 1; i++) {
+                if (freq >= freqs[i] && freq <= freqs[i+1]) {
+                    const p = (Math.log10(freq) - Math.log10(freqs[i])) / (Math.log10(freqs[i+1]) - Math.log10(freqs[i]));
+                    return dbData[i] + p * (dbData[i+1] - dbData[i]);
+                }
+            }
+            return null;
+        }
+
+        function getFirstFreqFromGain(targetDb) {
+            if (!parsedData) return null;
+            const varIndex = parseInt(variableSelector.value);
+            const freqs = parsedData.freqs;
+            const dbData = parsedData.varData[varIndex];
+            for(let i=0; i<dbData.length - 1; i++) {
+                if ((dbData[i] >= targetDb && dbData[i+1] <= targetDb) || (dbData[i] <= targetDb && dbData[i+1] >= targetDb)) {
+                    if (dbData[i+1] === dbData[i]) continue;
+                    const p = (targetDb - dbData[i]) / (dbData[i+1] - dbData[i]);
+                    const logF = Math.log10(freqs[i]) + p * (Math.log10(freqs[i+1]) - Math.log10(freqs[i]));
+                    return Math.pow(10, logF);
+                }
+            }
+            return null;
+        }
+
+        const inputs = {
+            c1f: document.getElementById('c1-freq'),
+            c1g: document.getElementById('c1-gain'),
+            c2f: document.getElementById('c2-freq'),
+            c2g: document.getElementById('c2-gain')
+        };
+        
+        let c1 = { f: null, db: null };
+        let c2 = { f: null, db: null };
+
+        inputs.c1f.addEventListener('input', () => {
+            const f = parseEng(inputs.c1f.value);
+            if (!isNaN(f) && f > 0) {
+                const db = interpFreqToGain(f);
+                if (db !== null) { inputs.c1g.value = db.toFixed(2); c1 = { f, db }; }
+            } else { c1 = { f: null, db: null }; inputs.c1g.value = ''; }
+            updateCursors();
+        });
+
+        inputs.c1g.addEventListener('input', () => {
+            const db = parseFloat(inputs.c1g.value);
+            if (!isNaN(db)) {
+                const f = getFirstFreqFromGain(db);
+                if (f !== null) { inputs.c1f.value = formatFreq(f); c1 = { f, db }; }
+            } else { c1 = { f: null, db: null }; inputs.c1f.value = ''; }
+            updateCursors();
+        });
+
+        inputs.c2f.addEventListener('input', () => {
+            const f = parseEng(inputs.c2f.value);
+            if (!isNaN(f) && f > 0) {
+                const db = interpFreqToGain(f);
+                if (db !== null) { inputs.c2g.value = db.toFixed(2); c2 = { f, db }; }
+            } else { c2 = { f: null, db: null }; inputs.c2g.value = ''; }
+            updateCursors();
+        });
+
+        inputs.c2g.addEventListener('input', () => {
+            const db = parseFloat(inputs.c2g.value);
+            if (!isNaN(db)) {
+                const f = getFirstFreqFromGain(db);
+                if (f !== null) { inputs.c2f.value = formatFreq(f); c2 = { f, db }; }
+            } else { c2 = { f: null, db: null }; inputs.c2f.value = ''; }
+            updateCursors();
+        });
+
+        window.baseShapes = [];
+        window.baseAnnotations = [];
+
+        function updateCursors() {
+            // Update UI deltas
+            if (c1.f !== null && c2.f !== null) {
+                const dF = Math.abs(c2.f - c1.f);
+                const dG = c2.db - c1.db;
+                const decades = Math.log10(c2.f) - Math.log10(c1.f);
+                let slope = 0;
+                if (decades !== 0) slope = dG / decades;
+                
+                document.getElementById('delta-f').textContent = formatFreq(dF);
+                document.getElementById('delta-gain').textContent = Math.abs(dG).toFixed(2) + " dB";
+                document.getElementById('delta-slope').textContent = slope.toFixed(2) + " dB/dec";
+            } else {
+                document.getElementById('delta-f').textContent = "---";
+                document.getElementById('delta-gain').textContent = "---";
+                document.getElementById('delta-slope').textContent = "---";
+            }
+
+            // Update Plotly
+            const cShapes = [];
+            const cAnns = [];
+            
+            if (c1.f !== null) {
+                cShapes.push({ type: 'line', x0: c1.f, x1: c1.f, y0: 0, y1: 1, yref: 'paper', line: { color: '#f43f5e', width: 2 } });
+                cAnns.push({ x: Math.log10(c1.f), y: c1.db, xref: 'x', yref: 'y', text: 'C1', showarrow: true, arrowhead: 2, ax: 40, ay: 0, font: { color: 'white' }, bgcolor: '#f43f5e' });
+            }
+            if (c2.f !== null) {
+                cShapes.push({ type: 'line', x0: c2.f, x1: c2.f, y0: 0, y1: 1, yref: 'paper', line: { color: '#10b981', width: 2 } });
+                cAnns.push({ x: Math.log10(c2.f), y: c2.db, xref: 'x', yref: 'y', text: 'C2', showarrow: true, arrowhead: 2, ax: -40, ay: 0, font: { color: 'white' }, bgcolor: '#10b981' });
+            }
+
+            Plotly.relayout('plot', {
+                shapes: [...window.baseShapes, ...cShapes],
+                annotations: [...window.baseAnnotations, ...cAnns]
+            });
+        }
+
+        variableSelector.addEventListener('change', () => {
+            inputs.c1f.dispatchEvent(new Event('input'));
+            inputs.c2f.dispatchEvent(new Event('input'));
+            calcFreqIn.dispatchEvent(new Event('input'));
+            calcGainIn.dispatchEvent(new Event('input'));
+        });
+
+        const toolSelector = document.getElementById('tool-selector');
+        const toolCursorsPane = document.getElementById('tool-cursors-pane');
+        const toolFinderPane = document.getElementById('tool-finder-pane');
+
+        toolSelector.addEventListener('change', () => {
+            if (toolSelector.value === 'cursors') {
+                toolCursorsPane.style.display = 'block';
+                toolFinderPane.style.display = 'none';
+            } else {
+                toolCursorsPane.style.display = 'none';
+                toolFinderPane.style.display = 'flex';
+            }
+        });
+
+        // Freq/Gain Finder Listeners
+        const calcFreqIn = document.getElementById('calc-freq');
+        const calcGainOut = document.getElementById('calc-gain-out');
+        const calcGainIn = document.getElementById('calc-gain');
+        const calcFreqOut = document.getElementById('calc-freq-out');
+
+        calcFreqIn.addEventListener('input', () => {
+            const f = parseEng(calcFreqIn.value);
+            if (!isNaN(f) && f > 0) {
+                const db = interpFreqToGain(f);
+                if (db !== null) { calcGainOut.textContent = db.toFixed(2) + " dB"; }
+            } else { calcGainOut.textContent = "---"; }
+        });
+
+        calcGainIn.addEventListener('input', () => {
+            if (!parsedData) return;
+            const targetDb = parseFloat(calcGainIn.value);
+            if (isNaN(targetDb)) { calcFreqOut.textContent = "---"; return; }
+            
+            const varIndex = parseInt(variableSelector.value);
+            const freqs = parsedData.freqs;
+            const dbData = parsedData.varData[varIndex];
+            
+            const foundFreqs = [];
+            for(let i=0; i<dbData.length - 1; i++) {
+                if ((dbData[i] >= targetDb && dbData[i+1] <= targetDb) || (dbData[i] <= targetDb && dbData[i+1] >= targetDb)) {
+                    if (dbData[i+1] === dbData[i]) continue;
+                    const p = (targetDb - dbData[i]) / (dbData[i+1] - dbData[i]);
+                    const logF = Math.log10(freqs[i]) + p * (Math.log10(freqs[i+1]) - Math.log10(freqs[i]));
+                    foundFreqs.push(Math.pow(10, logF));
+                }
+            }
+            if (foundFreqs.length === 0) {
+                calcFreqOut.textContent = "Not found";
+            } else {
+                calcFreqOut.textContent = foundFreqs.map(f => formatFreq(f)).join(' , ');
+            }
+        });
+
+    </script>
+</body>
+</html>
